@@ -2,41 +2,45 @@ from __future__ import annotations
 
 import ast
 import functools
+import unittest
 from pathlib import Path
 from types import SimpleNamespace
-import unittest
 from unittest.mock import patch
 
-import torch
-
 import helion
+import helion.language as hl
+
+import torch
 from helion import _compat
 from helion._compat import use_tileir_tunables
-from helion._compiler.static_loop_unroller import StaticLoopUnroller
-from helion._compiler.static_loop_unroller import unroll_static_loops
-from helion._testing import DEVICE
-from helion._testing import HALF_DTYPE
-from helion._testing import RefEagerTestBase
-from helion._testing import TestCase
-from helion._testing import _get_backend
-from helion._testing import code_and_output
-from helion._testing import import_path
-from helion._testing import onlyBackends
-from helion._testing import skipIfCudaCapabilityLessThan
-from helion._testing import skipIfFn
-from helion._testing import skipIfLowVRAM
-from helion._testing import skipIfNotCUDA
-from helion._testing import skipIfNotTriton
-from helion._testing import skipIfPallas
-from helion._testing import skipIfRefEager
-from helion._testing import skipIfSharedMemoryLessThan
-from helion._testing import skipIfTileIR
-from helion._testing import skipIfXPU
-from helion._testing import skipUnlessBackends
-from helion._testing import xfailIfPallas
-from helion._testing import xfailIfPallasInterpret
-from helion._testing import xfailIfPallasTpu
-import helion.language as hl
+from helion._compiler.static_loop_unroller import (
+    StaticLoopUnroller,
+    unroll_static_loops,
+)
+from helion._testing import (
+    _get_backend,
+    code_and_output,
+    DEVICE,
+    HALF_DTYPE,
+    import_path,
+    onlyBackends,
+    RefEagerTestBase,
+    skipIfCudaCapabilityLessThan,
+    skipIfFn,
+    skipIfLowVRAM,
+    skipIfNotCUDA,
+    skipIfNotTriton,
+    skipIfPallas,
+    skipIfRefEager,
+    skipIfSharedMemoryLessThan,
+    skipIfTileIR,
+    skipIfXPU,
+    skipUnlessBackends,
+    TestCase,
+    xfailIfPallas,
+    xfailIfPallasInterpret,
+    xfailIfPallasTpu,
+)
 
 datadir = Path(__file__).parent / "data"
 basic_kernels = import_path(datadir / "basic_kernels.py")
@@ -2214,6 +2218,31 @@ class TestLoops(RefEagerTestBase, TestCase):
         )
         torch.testing.assert_close(result, x + 1)
         self.assertNotIn(_thread_barrier(), code)
+
+    @skipIfNotTriton("automatic RAW barriers are Triton codegen-specific")
+    def test_sequential_loops_device_local_carry_has_no_barrier(self):
+        @helion.kernel(autotune_effort="none")
+        def two_pass_sum(x: torch.Tensor) -> torch.Tensor:
+            m, n = x.shape
+            out = torch.empty_like(x)
+            for tile_m in hl.tile(m):
+                total = hl.zeros([tile_m], dtype=torch.float32)
+                for tile_n in hl.tile(n):
+                    total += x[tile_m, tile_n].sum(dim=1)
+                for tile_n in hl.tile(n):
+                    out[tile_m, tile_n] = x[tile_m, tile_n] + total[:, None]
+            return out
+
+        x = torch.randn(32, 64, dtype=torch.float32, device=DEVICE)
+        code, result = code_and_output(
+            two_pass_sum,
+            (x,),
+            block_sizes=[8, 16, 16],
+            num_warps=4,
+            num_stages=1,
+        )
+        torch.testing.assert_close(result, x + x.sum(dim=1, keepdim=True))
+        self.assertNotIn("tl.debug_barrier()", code)
 
     @skipIfFn(
         lambda: _get_backend() not in ("triton", "cute"),
