@@ -3645,7 +3645,7 @@ class BoundKernel(_AutotunableKernel, Generic[_R]):
 
         # Generate caller function
         if args:
-
+            normalized_args = self.kernel.normalize_args(*args)
             def _render_input_arg_assignment(name: str, value: object) -> list[str]:
                 if isinstance(value, torch.Tensor):
                     shape = tuple(int(d) for d in value.shape)
@@ -3664,13 +3664,13 @@ class BoundKernel(_AutotunableKernel, Generic[_R]):
                 return [f"{name} = {value!r}"]
 
             sig_param_names = list(self.kernel.signature.parameters.keys())
-            assert len(args) == len(sig_param_names)
+            assert len(normalized_args) == len(sig_param_names)
 
             output_lines.extend(["", "def helion_repro_caller():"])
             output_lines.append("    torch.manual_seed(0)")
             arg_names: list[str] = []
 
-            for i, value in enumerate(args):
+            for i, value in enumerate(normalized_args):
                 var_name = sig_param_names[i]
                 arg_names.append(var_name)
 
