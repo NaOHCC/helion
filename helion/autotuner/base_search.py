@@ -116,7 +116,8 @@ _FINAL_REBENCHMARK_PINNED_TOLERANCE_ENV = (
     "HELION_AUTOTUNE_FINAL_REBENCHMARK_PINNED_TOLERANCE"
 )
 _FINAL_REBENCHMARK_PINNED_TOLERANCE_DEFAULT = 0.0
-_REBENCHMARK_TARGET_MS_DEFAULT = 200.0
+# _REBENCHMARK_TARGET_MS_DEFAULT = 200.0
+_REBENCHMARK_TARGET_MS_DEFAULT = 20.0
 _REBENCHMARK_INTERLEAVED_REPEAT_MAX = 20_000
 _CUTE_FLASH_CONFIG_GENERATION_POLICY_VERSION = 8
 
@@ -2183,10 +2184,11 @@ class PopulationBasedSearch(BaseSearch):
                 f"using {_FINAL_REBENCHMARK_TARGET_MS_DEFAULT}."
             )
             return _FINAL_REBENCHMARK_TARGET_MS_DEFAULT
-        return min(
-            _FINAL_REBENCHMARK_TARGET_MS_MAX,
-            max(_REBENCHMARK_TARGET_MS_DEFAULT, target_ms),
-        )
+        # return min(
+        #     _FINAL_REBENCHMARK_TARGET_MS_MAX,
+        #     max(_REBENCHMARK_TARGET_MS_DEFAULT, target_ms),
+        # )
+        return target_ms
 
     def _final_rebenchmark_use_isolated(self) -> bool:
         from ..runtime.settings import _env_get_bool
