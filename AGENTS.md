@@ -18,6 +18,8 @@ This document explains how to work effectively in this repository.
 - Run tests: `pytest <filename>`
   - Run subset: `pytest <filename> -k name_substring`
 - Build docs: `make -C docs html` (writes HTML under `site/`)
+- Must load environment variables: `source .env` before running commands.
+- Before running commands that require the Python environment, activate it with `source .venv/bin/activate`.
 
 ## Coding Style & Naming Conventions
 
