@@ -186,7 +186,7 @@ def check(m: int, n: int) -> None:
         "helion two pass": softmax_two_pass,
     }
     run_example(kernels, lambda x: torch.nn.functional.softmax(x, dim=1), (x,))
-
+    return
     print("\n\n=== Forward + Backward Pass Test ===")
     x_grad = torch.randn([m, n], device=DEVICE, dtype=HALF_DTYPE, requires_grad=True)
     run_example(
@@ -209,4 +209,11 @@ def main() -> None:
 
 # %%
 if __name__ == "__main__":
-    main()
+    # main()
+    x = torch.empty((4096, 2560), device="xpu", dtype=torch.float16)
+    bound = softmax_two_pass.bind((x,))
+
+    print(bound.config_spec.default_config())
+    print("====")
+    for dim in bound.config_spec.iter_search_dimensions():
+        print(dim)

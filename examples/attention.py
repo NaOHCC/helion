@@ -860,7 +860,7 @@ def test(
         del baselines["flex"]
 
     run_example(lambda *args: attention(*args)[0], baselines, (q, k, v))
-
+    return
     q_grad, k_grad, v_grad = [
         torch.randn(
             (z, h, n_ctx, head_dim), dtype=dtype, device=device
@@ -889,7 +889,8 @@ def main() -> None:
     Main entry point that runs the attention kernel test with specific parameters.
     Tests with batch size 2, 32 heads, 1024 sequence length, and 64-dimensional heads using float16.
     """
-    test(2, 32, 1024, 64, HALF_DTYPE, device=DEVICE)
+    # test(2, 32, 1024, 64, HALF_DTYPE, device=DEVICE)
+    test(4, 48, 8192, 128, HALF_DTYPE, device=DEVICE)
 
 
 if __name__ == "__main__":

@@ -2313,6 +2313,11 @@ class SubscriptIndexing(NamedTuple):
                         output_idx += tensor_indexer_broadcast_dims
                     continue
 
+                if k.ndim == 0:
+                    block_dims.append(False)
+                    index_values.append(f"({index_var})")
+                    continue
+
                 expand = (
                     tile_strategy.expand_str(output_size, output_idx)
                     if k.ndim < len(output_size)

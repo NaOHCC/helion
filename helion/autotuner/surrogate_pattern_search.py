@@ -864,7 +864,8 @@ class LFBOPatternSearch(PatternSearch):
         ``polish_rounds`` rounds. Recovers local wins the surrogate's
         selection fraction skipped, at a bounded extra eval cost.
         """
-        rounds = self.polish_rounds
+        # rounds = self.polish_rounds
+        rounds = 1
         if rounds <= 0 or self.config_spec.cute_flash_search_enabled:
             return
         current = self.best

@@ -131,6 +131,7 @@ _FINAL_REBENCHMARK_PINNED_TOLERANCE_ENV = (
     "HELION_AUTOTUNE_FINAL_REBENCHMARK_PINNED_TOLERANCE"
 )
 _FINAL_REBENCHMARK_PINNED_TOLERANCE_DEFAULT = 0.0
+<<<<<<< Updated upstream
 # The single-pass final verification re-times only the shortlist entries the
 # search measured within this factor of its best reading: a finalist 1.5x
 # slower by the search's own (median, L2-flushed) timing cannot overturn the
@@ -151,6 +152,9 @@ _FINAL_SELECTION_PREFERENCE_TOLERANCE_ENV = (
 )
 _FINAL_SELECTION_PREFERENCE_TOLERANCE_DEFAULT = 0.005
 _REBENCHMARK_TARGET_MS_DEFAULT = 200.0
+=======
+_REBENCHMARK_TARGET_MS_DEFAULT = 20.0
+>>>>>>> Stashed changes
 _REBENCHMARK_INTERLEAVED_REPEAT_MAX = 20_000
 # The only env override of the harness-grade final selection (full effort):
 # the number of steady-window rounds, for A/B runs against the profile.
@@ -3007,10 +3011,7 @@ class PopulationBasedSearch(BaseSearch):
                 f"using {_FINAL_REBENCHMARK_TARGET_MS_DEFAULT}."
             )
             return _FINAL_REBENCHMARK_TARGET_MS_DEFAULT
-        return min(
-            _FINAL_REBENCHMARK_TARGET_MS_MAX,
-            max(_REBENCHMARK_TARGET_MS_DEFAULT, target_ms),
-        )
+        return target_ms
 
     def _final_rebenchmark_use_isolated(self) -> bool:
         from ..runtime.settings import _env_get_bool

@@ -1717,6 +1717,7 @@ def run_kernel_variants(
         tritonbench_args.extend(
             ["--input-id", str(start_idx), "--num-inputs", str(shard_size)]
         )
+    tritonbench_args.extend(["--input-id", str(6)])
 
     try:
         # pyrefly: ignore [missing-import]

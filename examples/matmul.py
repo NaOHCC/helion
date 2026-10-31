@@ -40,10 +40,29 @@ if TYPE_CHECKING:
     if not use_tileir_tunables()
     else {},
 )
+# @helion.kernel(
+#     config=helion.Config(
+#         atomic_indexing=[],
+#         block_sizes=[256, 256, 32],
+#         indexing=["pointer", "tensor_descriptor", "tensor_descriptor"],
+#         l2_groupings=[4],
+#         load_eviction_policies=["", ""],
+#         loop_orders=[[1, 0]],
+#         # num_sm_multiplier=64,
+#         num_stages=2,
+#         num_warps=32,
+#         pid_type="flat",
+#         range_flattens=[None, None],
+#         range_multi_buffers=[True, None],
+#         range_num_stages=[0, 0],
+#         range_unroll_factors=[0, 0],
+#         range_warp_specializes=[],
+#     ),
+#     static_shapes=True,
+# )
 def matmul(
     x: Tensor,
     y: Tensor,
-    epilogue: Callable[[Tensor, tuple[Tensor, ...]], Tensor] = lambda acc, tile: acc,
 ) -> Tensor:
     """
     Performs matrix multiplication of x and y with an optional epilogue function.
@@ -65,7 +84,7 @@ def matmul(
         acc = hl.zeros([tile_m, tile_n], dtype=torch.float32)
         for tile_k in hl.tile(k):
             acc = torch.addmm(acc, x[tile_m, tile_k], y[tile_k, tile_n])
-        out[tile_m, tile_n] = epilogue(acc, (tile_m, tile_n))
+        out[tile_m, tile_n] = acc
     return out
 
 
@@ -202,7 +221,13 @@ def check(m: int, k: int, n: int) -> None:
     bias = torch.randn([n], device=DEVICE, dtype=HALF_DTYPE)
     bias_scalar = torch.randn([1], device=DEVICE, dtype=HALF_DTYPE)
     # Test without bias
-    run_example(matmul, torch.matmul, (x, y))
+    fns = {
+        "torch": torch.matmul,
+        "torch.compile": torch.compile(torch.matmul, mode="max-autotune"),
+    }
+
+    run_example(matmul, fns, (x, y), interleaved=False)
+    return
 
     # Test for addmm with scalar bias
     def addmm(bias: Tensor, mat1: Tensor, mat2: Tensor) -> Tensor:
@@ -335,7 +360,7 @@ def main() -> None:
     Main function to run autotuning (commented out) and correctness checks.
     """
     # autotune(1024, 1024, 1024)
-    check(1024, 1024, 1024)
+    check(4096, 4096, 4096)
 
 
 # %%

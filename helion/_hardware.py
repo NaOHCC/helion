@@ -124,7 +124,11 @@ def get_hardware_info(device: torch.device | None = None) -> HardwareInfo:
                 device_kind="xpu",
                 hardware_name=props.name,
                 runtime_version=props.driver_version,
+<<<<<<< Updated upstream
                 compute_capability=get_xpu_arch(device).name,
+=======
+                compute_capability=get_xpu_arch().name,
+>>>>>>> Stashed changes
             )
 
     # TPU / Pallas path

@@ -2564,7 +2564,7 @@ class LocalBenchmarkProvider(BenchmarkProvider):
                         benchmark_callable,
                         return_mode="median",
                         warmup=1,
-                        rep=50,
+                        rep=20,
                         process_group_name=self.kernel.env.process_group_name,
                         probe_long_kernel=self._probe_long_kernel(),
                         pre_warmed=True,
@@ -2574,7 +2574,7 @@ class LocalBenchmarkProvider(BenchmarkProvider):
                         benchmark_callable,
                         return_mode="median",
                         warmup=1,
-                        rep=50,
+                        rep=20,
                         process_group_name=self.kernel.env.process_group_name,
                     )
             res = sync_object(
@@ -2681,7 +2681,7 @@ class LocalBenchmarkProvider(BenchmarkProvider):
         retried_repetitions: int | None = None
         try:
             try:
-                latency = self._run_subprocess_benchmark_job(fn, warmup=1, rep=50)
+                latency = self._run_subprocess_benchmark_job(fn, warmup=1, rep=20)
             except BenchmarkTimeout:
                 if (
                     retry_repetitions is None
@@ -2702,7 +2702,7 @@ class LocalBenchmarkProvider(BenchmarkProvider):
                 latency = self._run_subprocess_benchmark_job(
                     fn,
                     warmup=1,
-                    rep=50,
+                    rep=20,
                     fixed_repetitions=retry_repetitions,
                 )
             if latency is None:
@@ -3302,7 +3302,7 @@ class MultiShapeBenchmarkProvider(BenchmarkProvider):
                 functools.partial(baseline_fn, *reference_args),
                 return_mode="median",
                 warmup=1,
-                rep=50,
+                rep=20,
                 process_group_name=child.kernel.env.process_group_name,
             )
         except Exception as error:

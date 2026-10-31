@@ -4925,6 +4925,37 @@ class TestIndexing(RefEagerTestBase, TestCase):
                 )
                 torch.testing.assert_close(output, expected)
 
+    def test_scalar_tensor_index_with_vector_indices(self):
+        @helion.kernel(static_shapes=True)
+        def update_state(data: torch.Tensor, ids: torch.Tensor) -> torch.Tensor:
+            rows, cols = data.shape[-2:]
+            out = torch.empty((rows, cols), device=data.device, dtype=data.dtype)
+            for tile_row, tile_col in hl.tile([rows, cols]):
+                state_index = ids[0].long()
+                if state_index < 0:
+                    out[tile_row, tile_col] = 0.0
+                else:
+                    values = data[state_index, 0, tile_row.index, tile_col.index]
+                    values = values + 1
+                    out[tile_row, tile_col] = values
+                    data[state_index, 0, tile_row.index, tile_col.index] = values
+            return out
+
+        for state_index in (-1, 2):
+            with self.subTest(state_index=state_index):
+                data = torch.randn(4, 2, 13, 19, device=DEVICE)
+                ids = torch.tensor([state_index], device=DEVICE, dtype=torch.int32)
+                expected_state = data.clone()
+                expected_out = torch.zeros_like(data[0, 0])
+                if state_index >= 0:
+                    expected_state[state_index, 0] += 1
+                    expected_out = expected_state[state_index, 0]
+                _, result = code_and_output(
+                    update_state, (data, ids), block_sizes=[8, 16], indexing="pointer"
+                )
+                torch.testing.assert_close(result, expected_out)
+                torch.testing.assert_close(data, expected_state)
+
     def test_scalar_tensor_index_with_grid(self):
         """Index a tensor with a 0-dim scalar tensor from a grid load."""
 
