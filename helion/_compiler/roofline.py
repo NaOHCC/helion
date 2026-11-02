@@ -22,6 +22,7 @@ from .device_ir import ForLoopGraphInfo
 from .device_ir import ReductionLoopGraphInfo
 from .device_ir import control_flow_parent_ids
 from .device_ir_analysis import DeviceIRAnalysis
+from .device_ir_analysis import _accessed_tensor_fake
 from .device_ir_analysis import matmul_operand_positions
 from .inductor_lowering import ReductionLowering
 
@@ -466,6 +467,7 @@ def _compute_static_flops(
     device_ir: DeviceIR,
     env: CompileEnvironment,
     spec: ConfigSpec,
+    config: Config,
     enclosing_by_graph: dict[int, tuple[tuple[int, ...], tuple[int, ...]]],
 ) -> tuple[int, int, int, torch.dtype | None, torch.dtype | None]:
     """Return ``(matmul_flops, vector_flops, sfu_flops, dominant_matmul_dtype, dominant_vector_dtype)``."""
@@ -564,7 +566,7 @@ def _compute_static_flops(
 
                 for extra_bid in enclosing_bids:
                     if extra_bid not in used_bids:
-                        batch_ext *= _block_extent(env, spec, extra_bid)
+                        batch_ext *= _block_trips(env, spec, config, extra_bid)
 
                 op_flops = 2 * batch_ext * m_ext * n_ext * k_ext
                 matmul_flops += op_flops
@@ -597,7 +599,7 @@ def _compute_static_flops(
             numel, used_bids = _tensor_logical_numel_and_blocks(env, spec, ref_tensor)
             for extra_bid in enclosing_bids:
                 if extra_bid not in used_bids:
-                    numel *= _block_extent(env, spec, extra_bid)
+                    numel *= _block_trips(env, spec, config, extra_bid)
 
             base_name = _op_base_name(node.target)
             weight = 2 if base_name in ("addmm", "baddbmm", "fma", "addcmul") else 1
@@ -645,6 +647,20 @@ def _memory_op_used_block_ids(
     return used
 
 
+def _memory_op_nodes_by_index(device_ir: DeviceIR) -> dict[int, torch.fx.Node]:
+    nodes: dict[int, torch.fx.Node] = {}
+    idx = 0
+    for graph_info in device_ir.graphs:
+        for node in graph_info.graph.nodes:
+            if node.op == "call_function" and node.target in (
+                memory_ops.load,
+                memory_ops.store,
+            ):
+                nodes[idx] = node
+                idx += 1
+    return nodes
+
+
 def _compute_memory_traffic(
     device_ir: DeviceIR,
     env: CompileEnvironment,
@@ -653,8 +669,8 @@ def _compute_memory_traffic(
     enclosing_by_graph: dict[int, tuple[tuple[int, ...], tuple[int, ...]]],
 ) -> tuple[int, int, int, int, int]:
     """Return ``(algo_read, algo_write, config_read, config_write, l2_estimated_total)`` in bytes."""
-    unique_reads: dict[str, int] = {}
-    unique_writes: dict[str, int] = {}
+    unique_reads: dict[object, int] = {}
+    unique_writes: dict[object, int] = {}
     config_read_bytes = 0
     config_write_bytes = 0
     l2_read_bytes = 0
@@ -666,6 +682,7 @@ def _compute_memory_traffic(
         else 1
     )
     reduction_fusion = bool(getattr(config, "reduction_fusion", False))
+    op_nodes = _memory_op_nodes_by_index(device_ir)
 
     for fact in spec.memory_op_facts:
         if fact.dtype is None or fact.accessed_numel <= 0:
@@ -676,16 +693,48 @@ def _compute_memory_traffic(
         if isinstance(graph_info, ReductionLoopGraphInfo):
             continue
 
-        base_bytes = fact.accessed_numel * fact.dtype.itemsize
-        key = fact.tensor_name or f"slot_{fact.indexing_index}"
+        used_bids = _memory_op_used_block_ids(env, fact)
+        effective_numel = fact.accessed_numel
+        storage_key: object = fact.tensor_name or f"slot_{fact.indexing_index}"
+
+        node = op_nodes.get(fact.indexing_index)
+        if node is not None:
+            accessed_fake = _accessed_tensor_fake(node)
+            if accessed_fake is not None:
+                with contextlib.suppress(Exception):
+                    storage_key = (
+                        "storage",
+                        int(accessed_fake.untyped_storage()._cdata),
+                    )
+            tile_val = (
+                node.meta.get("val")
+                if fact.kind == "load"
+                else (
+                    node.args[2].meta.get("val")
+                    if len(node.args) >= 3 and isinstance(node.args[2], torch.fx.Node)
+                    else None
+                )
+            )
+            if isinstance(tile_val, torch.Tensor):
+                tile_numel, tile_bids = _tensor_logical_numel_and_blocks(
+                    env, spec, tile_val
+                )
+                used_bids |= tile_bids
+                if tile_numel > 0:
+                    effective_numel = min(effective_numel, tile_numel)
+
+        base_bytes = effective_numel * fact.dtype.itemsize
         if fact.kind == "load":
-            unique_reads[key] = max(unique_reads.get(key, 0), base_bytes)
+            unique_reads[storage_key] = max(
+                unique_reads.get(storage_key, 0), base_bytes
+            )
         else:
-            unique_writes[key] = max(unique_writes.get(key, 0), base_bytes)
+            unique_writes[storage_key] = max(
+                unique_writes.get(storage_key, 0), base_bytes
+            )
 
         grid_bids, inner_bids = enclosing_by_graph.get(fact.graph_id, ((), ()))
         enclosing_bids = (*grid_bids, *inner_bids)
-        used_bids = _memory_op_used_block_ids(env, fact)
 
         repeat_factor = 1
         grid_repeat_factor = 1
@@ -866,7 +915,7 @@ def analyze_roofline(
             sfu_flops,
             dominant_matmul_dtype,
             dominant_vector_dtype,
-        ) = _compute_static_flops(device_ir, env, spec, enclosing_by_graph)
+        ) = _compute_static_flops(device_ir, env, spec, config, enclosing_by_graph)
         (
             algo_read_bytes,
             algo_write_bytes,

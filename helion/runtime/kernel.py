@@ -3976,6 +3976,22 @@ class BoundKernel(_AutotunableKernel, Generic[_R]):
                 resolved.append(item)
         return tuple(resolved)
 
+    def _args_match_traced_hints(self, runtime_args: tuple[object, ...]) -> bool:
+        if len(runtime_args) != len(self.fake_args):
+            return False
+        for real_arg, fake_arg in zip(runtime_args, self.fake_args, strict=True):
+            if isinstance(real_arg, torch.Tensor) and isinstance(
+                fake_arg, torch.Tensor
+            ):
+                if real_arg.ndim != fake_arg.ndim:
+                    return False
+                for real_dim, fake_dim in zip(
+                    real_arg.shape, fake_arg.shape, strict=True
+                ):
+                    if int(real_dim) != self.env.size_hint(fake_dim):
+                        return False
+        return True
+
     def roofline(
         self,
         config: ConfigLike | None = None,
@@ -3991,7 +4007,8 @@ class BoundKernel(_AutotunableKernel, Generic[_R]):
         Args:
             config: Configuration to analyze. Defaults to the bound/implicit config or
                 ``config_spec.default_config()``.
-            args: Optional runtime arguments for empirical benchmarking when ``measure=True``.
+            args: Optional runtime arguments for empirical benchmarking or shape-exact
+                static analysis when a dynamic/AOT bound kernel is reused across shapes.
             measure: If True and ``latency_ms`` is None, compile and benchmark the kernel
                 using ``do_bench`` to compute achieved TFLOP/s, GB/s, and SOL%.
             latency_ms: Pre-measured kernel execution latency in milliseconds.
@@ -4015,11 +4032,24 @@ class BoundKernel(_AutotunableKernel, Generic[_R]):
             resolved_config = self._normalize_config(config)
         normalized_config = self._normalized_config_copy(resolved_config)
 
+        target_bound: BoundKernel[_R] = self
+        if args is not None:
+            runtime_args = self._resolve_bound_args(args)
+            if not self._args_match_traced_hints(runtime_args):
+                target_bound = BoundKernel(
+                    self.kernel,
+                    runtime_args,
+                    cache_managed=False,
+                )
+        else:
+            runtime_args = None
+
         measured_latency = latency_ms
         if measure and measured_latency is None:
             from ..autotuner.benchmarking import do_bench
 
-            runtime_args = self._resolve_bound_args(args)
+            if runtime_args is None:
+                runtime_args = self._resolve_bound_args(None)
             compiled_fn = self.compile_config(normalized_config, allow_print=False)
             bench_res = do_bench(
                 lambda: compiled_fn(*runtime_args),
@@ -4032,10 +4062,11 @@ class BoundKernel(_AutotunableKernel, Generic[_R]):
                 else float(bench_res)
             )
 
+        assert target_bound.host_function is not None
         return analyze_roofline(
-            env=self.env,
-            device_ir=self.host_function.device_ir,
-            host_function=self.host_function,
+            env=target_bound.env,
+            device_ir=target_bound.host_function.device_ir,
+            host_function=target_bound.host_function,
             config=normalized_config,
             latency_ms=measured_latency,
             hardware_spec=hardware_spec,

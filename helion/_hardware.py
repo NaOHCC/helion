@@ -288,6 +288,26 @@ _BMG_ARC_B580_BASELINE = _XpuSkuBaseline(
     scale_bandwidth_with_cores=False,
 )
 
+# Intel Arc Pro B70 Graphics (BMG-G31, 32 Xe2-cores @ 2.8 GHz, 256-bit GDDR6 @ 19 Gbps = 608 GB/s)
+_BMG_ARC_PRO_B70_BASELINE = _XpuSkuBaseline(
+    reference_xe_cores=32,
+    peak_memory_bandwidth_gbps=608.0,
+    peak_matrix_tflops={
+        torch.float16: 183.5,
+        torch.bfloat16: 183.5,
+        torch.float32: 91.75,
+        torch.float8_e4m3fn: 367.0,
+        torch.float8_e5m2: 367.0,
+        torch.int8: 367.0,
+    },
+    peak_vector_tflops={
+        torch.float32: 22.94,
+        torch.float16: 45.88,
+        torch.bfloat16: 45.88,
+    },
+    scale_bandwidth_with_cores=False,
+)
+
 
 def _match_xpu_sku_baseline(
     hardware_name: str, compute_capability: str
@@ -297,10 +317,18 @@ def _match_xpu_sku_baseline(
         return _PVC_MAX_1100_BASELINE
     if "1550" in lowered or "max" in lowered or "pvc" in lowered:
         return _PVC_MAX_1550_BASELINE
-    if "b580" in lowered or "b570" in lowered or "bmg" in lowered or "arc b" in lowered:
+    if "b70" in lowered or "b80" in lowered or "g31" in lowered:
+        return _BMG_ARC_PRO_B70_BASELINE
+    if (
+        "b580" in lowered
+        or "b570" in lowered
+        or "b60" in lowered
+        or "bmg" in lowered
+        or "arc b" in lowered
+    ):
         return _BMG_ARC_B580_BASELINE
     if compute_capability.lower().startswith("xe2"):
-        return _BMG_ARC_B580_BASELINE
+        return _BMG_ARC_PRO_B70_BASELINE
     return _PVC_MAX_1550_BASELINE
 
 

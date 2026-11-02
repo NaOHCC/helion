@@ -108,6 +108,19 @@ class TestXpuRooflineHardwareSpecs(TestCase):
             (117.0 * 1e3) / 456.0,
         )
 
+        b70_info = HardwareInfo(
+            device_kind="xpu",
+            hardware_name="Intel(R) Arc(TM) Pro B70 Graphics",
+            runtime_version="1.17.39395+16",
+            compute_capability="Xe2",
+        )
+        spec_b70 = get_hardware_roofline_spec(hardware_info=b70_info)
+        self.assertEqual(spec_b70.num_compute_units, 32)
+        self.assertAlmostEqual(spec_b70.matrix_tflops(torch.float16), 183.5)
+        self.assertAlmostEqual(spec_b70.matrix_tflops(torch.float8_e4m3fn), 367.0)
+        self.assertAlmostEqual(spec_b70.vector_tflops(torch.float32), 22.94)
+        self.assertAlmostEqual(spec_b70.peak_memory_bandwidth_gbps, 608.0)
+
     def test_env_overrides(self) -> None:
         bmg_info = HardwareInfo(
             device_kind="xpu",
