@@ -110,6 +110,8 @@ if TYPE_CHECKING:
     from .._compiler.compile_environment import PreparedGuardFactory
     from .._compiler.compile_environment import TensorDescriptorLayoutGuard
     from .._compiler.host_function import HostFunction
+    from .._compiler.roofline import RooflineReport
+    from .._hardware import HardwareRooflineSpec
     from ..autotuner import ConfigSpec
     from ..autotuner.base_cache import BoundKernelInMemoryCacheKey
     from .cute_structural_config import CuteStructuralPolicyRequest
@@ -2550,6 +2552,10 @@ class BoundKernel(_AutotunableKernel, Generic[_R]):
             for name, value in zip(self.kernel.signature.parameters, args, strict=False)
             if isinstance(value, torch.Tensor)
         }
+        self._bound_arg_refs: tuple[object, ...] = tuple(
+            weakref.ref(value) if isinstance(value, torch.Tensor) else value
+            for value in args
+        )
         self._first_compile_lock = threading.RLock()
         self._backward_compiled: (
             tuple[Kernel[object], str, BoundKernel[object]] | None
@@ -3951,6 +3957,89 @@ class BoundKernel(_AutotunableKernel, Generic[_R]):
         else:
             with measure("BoundKernel.autotune"):
                 self.autotune(args, force=False)
+
+    def _resolve_bound_args(
+        self, args: Sequence[object] | None = None
+    ) -> tuple[object, ...]:
+        if args is not None:
+            return self.kernel.normalize_args(*args)
+        resolved: list[object] = []
+        for item in self._bound_arg_refs:
+            if isinstance(item, weakref.ReferenceType):
+                val = item()
+                if val is None:
+                    raise RuntimeError(
+                        "Bound input tensor was garbage-collected; pass args=... explicitly to roofline()."
+                    )
+                resolved.append(val)
+            else:
+                resolved.append(item)
+        return tuple(resolved)
+
+    def roofline(
+        self,
+        config: ConfigLike | None = None,
+        *,
+        args: Sequence[object] | None = None,
+        measure: bool = True,
+        latency_ms: float | None = None,
+        hardware_spec: HardwareRooflineSpec | None = None,
+        l2_flush_mode: str | None = None,
+    ) -> RooflineReport:
+        """Compute static and (optionally) empirical Roofline metrics for this bound kernel.
+
+        Args:
+            config: Configuration to analyze. Defaults to the bound/implicit config or
+                ``config_spec.default_config()``.
+            args: Optional runtime arguments for empirical benchmarking when ``measure=True``.
+            measure: If True and ``latency_ms`` is None, compile and benchmark the kernel
+                using ``do_bench`` to compute achieved TFLOP/s, GB/s, and SOL%.
+            latency_ms: Pre-measured kernel execution latency in milliseconds.
+            hardware_spec: Optional hardware roofline ceiling override.
+            l2_flush_mode: Optional L2 cache flush mode for ``do_bench`` (``"call"``, ``"off"``, ``"replay"``).
+
+        Returns:
+            RooflineReport: Structured static and empirical Roofline analysis report.
+        """
+        from .._compiler.roofline import analyze_roofline
+
+        if self.host_function is None:
+            raise exc.InvalidAPIUsage(
+                "Roofline analysis is unavailable when ref_mode is enabled."
+            )
+        if config is None:
+            resolved_config = self._implicit_config()
+            if resolved_config is None:
+                resolved_config = self.config_spec.default_config()
+        else:
+            resolved_config = self._normalize_config(config)
+        normalized_config = self._normalized_config_copy(resolved_config)
+
+        measured_latency = latency_ms
+        if measure and measured_latency is None:
+            from ..autotuner.benchmarking import do_bench
+
+            runtime_args = self._resolve_bound_args(args)
+            compiled_fn = self.compile_config(normalized_config, allow_print=False)
+            bench_res = do_bench(
+                lambda: compiled_fn(*runtime_args),
+                return_mode="median",
+                l2_flush_mode=l2_flush_mode,
+            )
+            measured_latency = (
+                float(bench_res[0])
+                if isinstance(bench_res, tuple)
+                else float(bench_res)
+            )
+
+        return analyze_roofline(
+            env=self.env,
+            device_ir=self.host_function.device_ir,
+            host_function=self.host_function,
+            config=normalized_config,
+            latency_ms=measured_latency,
+            hardware_spec=hardware_spec,
+        )
 
     # pyrefly: ignore [bad-return]
     def run_ref(self, *args: object) -> _R:

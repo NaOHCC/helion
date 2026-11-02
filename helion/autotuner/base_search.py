@@ -82,6 +82,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
     from typing_extensions import Self
 
+    from .._compiler.roofline import RooflineReport
     from ..runtime.config import Config
     from ..runtime.cute_structural_policy import CuteStructuralPolicy
     from ..runtime.settings import Settings
@@ -1498,6 +1499,31 @@ class BaseSearch(BaseAutotuner):
         self._autotune_metrics.best_perf_ms = (
             best_perf if math.isfinite(best_perf) else 0.0
         )
+        if best_config is not None:
+            with contextlib.suppress(Exception):
+                roofline_fn = getattr(self.kernel, "roofline", None)
+                if callable(roofline_fn):
+                    roofline_report = cast(
+                        "RooflineReport",
+                        roofline_fn(
+                            best_config,
+                            measure=False,
+                            latency_ms=(
+                                self._autotune_metrics.best_perf_ms
+                                if self._autotune_metrics.best_perf_ms > 0
+                                else None
+                            ),
+                        ),
+                    )
+                    self._autotune_metrics.roofline = roofline_report.to_dict()
+                    if roofline_report.sol_pct is not None:
+                        self.log(
+                            f"Roofline SOL: {roofline_report.sol_pct:.1f}% "
+                            f"(Config SOL: {roofline_report.config_sol_pct or 0.0:.1f}%, "
+                            f"bottleneck={roofline_report.bottleneck}, "
+                            f"achieved={roofline_report.achieved_tflops or 0.0:.2f} TFLOP/s, "
+                            f"{roofline_report.achieved_algo_gbps or 0.0:.1f} GB/s)"
+                        )
         self._autotune_metrics.finalize()
         _run_post_autotune_hooks(self._autotune_metrics)
 
