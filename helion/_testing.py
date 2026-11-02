@@ -39,6 +39,7 @@ from ._compat import requires_torch_version
 from ._compat import supports_amd_cdna_tunables
 from ._compat import supports_block_ptr
 from ._compat import supports_host_tensor_descriptor
+from ._compat import supports_intel_xpu_tunables
 from ._compat import supports_tensor_descriptor
 from ._compat import target_device_capability
 from ._dist_utils import is_master_rank
@@ -87,6 +88,8 @@ def _strip_launcher_args(value: str) -> str:
             (r", matrix_instr_nonkdim=\d+", ""),
             (r", xcd_remap=(?:True|False)", ""),
         ]
+    if supports_intel_xpu_tunables():
+        strip_pairs += [(r", grf_mode='[^']*'", "")]
     if _get_backend() == "tileir":
         strip_pairs += [(r", num_ctas=\d+", ""), (r", occupancy=\d+", "")]
     for tunable in get_mtia_tunable_fragments():

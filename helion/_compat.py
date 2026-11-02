@@ -556,6 +556,15 @@ def device_num_sm(device: torch.device | int | None = None) -> int:
     constructions derive a value consistent with ``get_num_xcd`` instead of
     assuming 1.  The real compile path passes the reserved-adjusted count.
     """
+    is_xpu_device = isinstance(device, torch.device) and device.type == "xpu"
+    if torch.xpu.is_available() and (is_xpu_device or not torch.cuda.is_available()):
+        try:
+            # gpu_subslice_count is the Xe-core count, matching get_num_sm.
+            return torch.xpu.get_device_properties(
+                device if device is not None else torch.xpu.current_device()
+            ).gpu_subslice_count
+        except Exception:
+            return 1
     if not torch.cuda.is_available():
         return 1
     try:
@@ -564,6 +573,17 @@ def device_num_sm(device: torch.device | int | None = None) -> int:
         ).multi_processor_count
     except Exception:
         return 1
+
+
+def supports_intel_xpu_tunables() -> bool:
+    """Check if Intel XPU Triton options (e.g. ``grf_mode``) are available."""
+    # call private func we can patch in testing
+    return _supports_intel_xpu_tunables()
+
+
+@functools.cache
+def _supports_intel_xpu_tunables() -> bool:
+    return torch.xpu.is_available()
 
 
 def supports_mtia_tunables() -> bool:

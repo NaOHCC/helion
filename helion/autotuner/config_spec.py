@@ -1049,6 +1049,7 @@ _BASE_BACKEND_TUNABLE_KEYS: frozenset[str] = frozenset(
     {
         "waves_per_eu",
         "matrix_instr_nonkdim",
+        "grf_mode",
         "num_ctas",
         "occupancy",
         "pallas_worklist_grouping",
@@ -6468,6 +6469,31 @@ class ConfigSpec:
         self.normalize(normalized, _cute_register_tiles=_cute_register_tiles)
         return normalized
 
+    def _normalize_xpu_grf_mode(
+        self, config: dict[str, object], *, fix_invalid: bool
+    ) -> None:
+        grf_mode = config.get("grf_mode")
+        if grf_mode is None:
+            return
+        fragment = self.backend_tunable_fragments.get("grf_mode")
+        if isinstance(fragment, EnumFragment) and grf_mode not in fragment.choices:
+            if fix_invalid:
+                config["grf_mode"] = fragment.default()
+                return
+            raise InvalidConfig(
+                f"Invalid value for 'grf_mode': {grf_mode!r}, "
+                f"expected one of {fragment.choices!r}"
+            )
+        # The Intel backend rejects large GRF with more than 32 warps.
+        num_warps = config.get("num_warps")
+        if grf_mode != "default" and isinstance(num_warps, int) and num_warps > 32:
+            if fix_invalid:
+                config["grf_mode"] = "default"
+                return
+            raise InvalidConfig(
+                f"grf_mode={grf_mode!r} cannot be used with num_warps > 32"
+            )
+
     def _normalize_amd_mfma(
         self, config: dict[str, object], *, fix_invalid: bool
     ) -> None:
@@ -7435,6 +7461,7 @@ class ConfigSpec:
         for key, fragment in self.backend_tunable_fragments.items():
             config.setdefault(key, fragment.default())
         self._normalize_amd_mfma(config, fix_invalid=_fix_invalid)
+        self._normalize_xpu_grf_mode(config, fix_invalid=_fix_invalid)
         if self.backend_name == "cute":
             normalize_block_scaled_config(
                 config,

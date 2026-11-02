@@ -126,6 +126,8 @@ class TritonBackend(Backend):
             return _compat.is_hip()
         if key == "matrix_instr_nonkdim":
             return _compat.supports_amd_cdna_tunables()
+        if key == "grf_mode":
+            return _compat.supports_intel_xpu_tunables()
         if key == "xcd_remap":
             # Accepted on all AMD CDNA.  On single-XCD devices it normalizes to a
             # no-op (ConfigSpec.normalize) and is excluded from the search space
@@ -140,17 +142,20 @@ class TritonBackend(Backend):
         from ..._compat import get_mtia_tunable_fragments
         from ..._compat import is_hip
         from ..._compat import supports_amd_cdna_tunables
+        from ..._compat import supports_intel_xpu_tunables
         from ..._compat import supports_mtia_tunables
         from ...autotuner.config_fragment import EnumFragment
 
-        if not is_hip() and not supports_mtia_tunables():
-            return {}
         fragments: dict[str, ConfigSpecFragment] = {}
         if is_hip():
             # A value of 0 leaves occupancy unconstrained, matching Triton's default.
             fragments["waves_per_eu"] = EnumFragment(choices=(0, 1, 2, 3, 4))
             if supports_amd_cdna_tunables():
                 fragments["matrix_instr_nonkdim"] = EnumFragment(choices=(0, 16, 32))
+
+        if supports_intel_xpu_tunables():
+            # "default" lets the Intel backend retry with large GRF on spills.
+            fragments["grf_mode"] = EnumFragment(choices=("default", "256"))
 
         if supports_mtia_tunables():
             fragments.update(get_mtia_tunable_fragments())

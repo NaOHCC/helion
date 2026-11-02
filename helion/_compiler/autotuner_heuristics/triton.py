@@ -4028,6 +4028,67 @@ class TritonH100MultiMatmulHeuristic(
     HARDWARE_TARGETS = (("cuda", "sm90"),)
 
 
+class TritonXpuMatmulHeuristic(TritonH100MatmulHeuristic):
+    """Intel XPU (Xe / Xe2) seeds for a static single matmul.
+
+    The CUDA budget formula models 32-lane warps and SM shared memory, neither of
+    which describes DPAS on Xe. These seeds follow the Intel Triton backend's
+    tuned GEMM tiles (32 warps) and load operands through tensor descriptors so
+    they lower to 2D block I/O. ``grf_mode`` stays at its default, which already
+    escalates to the large register file when a tile would spill.
+    Seeds only; the autotune-off default is unchanged until measured.
+    """
+
+    name = "triton_xpu_matmul"
+    promote_seed_to_default = False
+    HARDWARE_TARGETS = (("xpu", "Xe"), ("xpu", "Xe2"))
+    # (block_m, block_n, block_k, num_warps, num_stages), largest first.
+    TILES: ClassVar[tuple[tuple[int, int, int, int, int], ...]] = (
+        (256, 256, 32, 32, 2),
+        (256, 128, 32, 32, 2),
+        (64, 128, 32, 32, 2),
+    )
+    L2_GROUPING = 4
+
+    @classmethod
+    def _ranked_configs(cls, env: CompileEnvironment, fact: MatmulFact) -> list[Config]:
+        from ..._compat import supports_tensor_descriptor
+        from ...runtime import get_num_sm
+
+        assert fact.static_m is not None
+        assert fact.static_n is not None
+        spec = env.config_spec
+        mm = spec.kernel_matmul_fact
+        site = mm.matmuls[0].site if mm is not None and mm.matmuls else None
+        num_sm = max(1, get_num_sm(env.device))
+        m, n = fact.static_m, fact.static_n
+
+        def grid(tile: tuple[int, int, int, int, int]) -> int:
+            return -(-m // tile[0]) * -(-n // tile[1])
+
+        # Largest tile that still fills every Xe core; otherwise the smallest.
+        primary = next(
+            (tile for tile in cls.TILES if grid(tile) >= num_sm), cls.TILES[-1]
+        )
+        tiles = [primary, *(tile for tile in cls.TILES if tile != primary)]
+
+        configs = []
+        for bm, bn, bk, num_warps, num_stages in tiles:
+            raw: dict[str, object] = {
+                "block_sizes": _h100_build_block_sizes(spec, fact, bm, bn, bk),
+                "num_warps": num_warps,
+                "num_stages": num_stages,
+            }
+            if supports_tensor_descriptor():
+                raw["indexing"] = "tensor_descriptor"
+            if -(-m // bm) > 1:
+                l2_groupings = cls._l2_groupings_for_site(env, site, cls.L2_GROUPING)
+                if l2_groupings is not None:
+                    raw["l2_groupings"] = l2_groupings
+            configs.append(_materialize_config(raw, config_spec=spec))
+        return configs
+
+
 # Module-level shims delegating to the class (tests + lab harness call these by name).
 def _h100_matmul_tile(
     m: int, n: int, k: int, itemsize: int, num_sm: int, pinned_grid: int = 1

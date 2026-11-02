@@ -88,7 +88,7 @@ def get_num_sm(device: torch.device, *, reserved_sms: int = 0) -> int:
         available_sms = torch.cuda.get_device_properties(
             device.index
         ).multi_processor_count
-    # TODO(EikanWang): gpu_subslice_count is an out-of-date term. we change update it to XeCore number.
+    # gpu_subslice_count is eu_count / eu_count_per_subslice, i.e. the Xe-core count.
     elif device.type == "xpu":
         available_sms = torch.xpu.get_device_properties(device.index).gpu_subslice_count
     elif device.type == "mps":
