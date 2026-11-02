@@ -132,7 +132,6 @@ _FINAL_REBENCHMARK_PINNED_TOLERANCE_ENV = (
     "HELION_AUTOTUNE_FINAL_REBENCHMARK_PINNED_TOLERANCE"
 )
 _FINAL_REBENCHMARK_PINNED_TOLERANCE_DEFAULT = 0.0
-<<<<<<< Updated upstream
 # The single-pass final verification re-times only the shortlist entries the
 # search measured within this factor of its best reading: a finalist 1.5x
 # slower by the search's own (median, L2-flushed) timing cannot overturn the
@@ -152,10 +151,7 @@ _FINAL_SELECTION_PREFERENCE_TOLERANCE_ENV = (
     "HELION_AUTOTUNE_FINAL_SELECTION_PREFERENCE_TOLERANCE"
 )
 _FINAL_SELECTION_PREFERENCE_TOLERANCE_DEFAULT = 0.005
-_REBENCHMARK_TARGET_MS_DEFAULT = 200.0
-=======
 _REBENCHMARK_TARGET_MS_DEFAULT = 20.0
->>>>>>> Stashed changes
 _REBENCHMARK_INTERLEAVED_REPEAT_MAX = 20_000
 # The only env override of the harness-grade final selection (full effort):
 # the number of steady-window rounds, for A/B runs against the profile.

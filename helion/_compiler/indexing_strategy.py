@@ -1299,6 +1299,17 @@ class TensorDescriptorIndexingStrategy(IndexingStrategy):
         for dim, is_aligned in enumerate(stride_aligned_dims):
             if dim != stride_one_dim and not is_aligned:
                 return False
+        if env.device.type == "xpu" and any(
+            dim != stride_one_dim
+            and isinstance(stride, int)
+            and stride == 0
+            and env.size_hint(size) > 1
+            for dim, (size, stride) in enumerate(
+                zip(fake_tensor.size(), fake_tensor.stride(), strict=True)
+            )
+        ):
+            # Intel descriptor loads over an expanded (stride-0) row hang the device.
+            return False
 
         if not env.tensor_descriptor_base_is_aligned(fake_tensor):
             return False

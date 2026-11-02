@@ -890,11 +890,11 @@ class TestAutotunerAccuracy(AutotunerTestCase):
         expected = torch.full([128], 3.0, device=DEVICE) + epsilon
         torch.testing.assert_close(out, expected)
 
-    @skipIfXPU("CUDA specific API used to check memory usage")
     def test_chunked_allclose_memory(self):
         """Test that autotuning accuracy checks use chunked comparison for large tensors."""
         import helion.autotuner.accuracy as _accuracy
 
+        device_module = torch.get_device_module(DEVICE)
         numel = 2**22  # 4M float32 elements (~16 MB each)
         # The default chunk_size (2**22) would not chunk a tensor this small,
         # so pass a smaller one through the patched helper below; 4 chunks is
@@ -924,11 +924,11 @@ class TestAutotunerAccuracy(AutotunerTestCase):
         # on tensors of the same size
         ref_a = torch.randn(numel, device=DEVICE)
         ref_b = ref_a.clone()
-        torch.cuda.empty_cache()
-        torch.cuda.reset_peak_memory_stats()
-        base_mem = torch.cuda.memory_allocated()
+        device_module.empty_cache()
+        device_module.reset_peak_memory_stats()
+        base_mem = device_module.memory_allocated()
         torch.testing.assert_close(ref_a, ref_b, atol=1e-2, rtol=1e-2)
-        naive_peak = torch.cuda.max_memory_allocated() - base_mem
+        naive_peak = device_module.max_memory_allocated() - base_mem
         del ref_a, ref_b
 
         # Patch the moved chunked helper to record peak memory delta per call.
@@ -936,10 +936,10 @@ class TestAutotunerAccuracy(AutotunerTestCase):
         peaks: list[int] = []
 
         def measuring_chunked_assert_close(*args, **kwargs):
-            torch.cuda.reset_peak_memory_stats()
-            before = torch.cuda.memory_allocated()
+            device_module.reset_peak_memory_stats()
+            before = device_module.memory_allocated()
             real_chunked_assert_close(*args, chunk_size=chunk_size, **kwargs)
-            peak = torch.cuda.max_memory_allocated() - before
+            peak = device_module.max_memory_allocated() - before
             peaks.append(peak)
 
         with patch.object(

@@ -15,6 +15,7 @@ from helion._testing import RefEagerTestBase
 from helion._testing import TestCase
 from helion._testing import check_example
 from helion._testing import code_and_output
+from helion._testing import is_xpu
 from helion._testing import onlyBackends
 from helion._testing import skipIfCudaCapabilityLessThan
 from helion._testing import skipIfRefEager
@@ -1661,7 +1662,6 @@ class TestTensorDescriptor(RefEagerTestBase, TestCase):
                     self.assertIn("tl.dot", code)
 
     @skipUnlessTensorDescriptor("Tensor descriptor support is required")
-    @skipIfXPU("XPU tensor descriptor path has issue with stride-0 input")
     def test_dynamic_shape_stride_zero_input(self):
         """Expanded stride-0 dimensions should be TD-eligible with dynamic shapes."""
 
@@ -1684,7 +1684,11 @@ class TestTensorDescriptor(RefEagerTestBase, TestCase):
 
         code, result = code_and_output(copy_expanded, (x,))
         torch.testing.assert_close(result, x)
-        self.assert_tensor_descriptor_used_for(code, "x")
+        if is_xpu():
+            # Intel 2D block I/O cannot address a zero row pitch.
+            self.assert_tensor_descriptor_not_used_for(code, "x")
+        else:
+            self.assert_tensor_descriptor_used_for(code, "x")
 
     def assert_uses_tensor_descriptors(self, code: str) -> None:
         self.assertIn(get_tensor_descriptor_fn_name(), code)

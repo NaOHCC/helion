@@ -118,18 +118,22 @@ def get_hardware_info(device: torch.device | None = None) -> HardwareInfo:
                     compute_capability=props.gcnArchName,
                 )
         if device.type == "xpu":
+            import inspect
+
             from torch.testing._internal.common_xpu import get_xpu_arch
 
             props = torch.xpu.get_device_properties(device)
+            # Older torch builds expose get_xpu_arch() without a device argument.
+            arch = (
+                get_xpu_arch(device)
+                if inspect.signature(get_xpu_arch).parameters
+                else get_xpu_arch()
+            )
             return HardwareInfo(
                 device_kind="xpu",
                 hardware_name=props.name,
                 runtime_version=props.driver_version,
-<<<<<<< Updated upstream
-                compute_capability=get_xpu_arch(device).name,
-=======
-                compute_capability=get_xpu_arch().name,
->>>>>>> Stashed changes
+                compute_capability=arch.name,
             )
 
     # TPU / Pallas path

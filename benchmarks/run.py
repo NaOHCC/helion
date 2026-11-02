@@ -159,8 +159,10 @@ def patch_mamba2_tritonbench_inputs(operator_name: str, Operator: type[Any]) -> 
                     x.shape[3],
                     C.shape[3],
                 )
-                if shape == MAMBA2_LARGE_SHAPE and x.device.type == "cuda":
-                    free_memory, _ = torch.cuda.mem_get_info(x.device)
+                if shape == MAMBA2_LARGE_SHAPE and x.device.type in ("cuda", "xpu"):
+                    free_memory, _ = torch.get_device_module(x.device).mem_get_info(
+                        x.device
+                    )
                     # Accuracy checks run TritonBench's eager baseline, which
                     # expands cb across heads and OOMs below this free-memory level.
                     if free_memory < MAMBA2_LARGE_SHAPE_MIN_FREE_MEMORY_BYTES:
@@ -179,8 +181,10 @@ def patch_mamba2_tritonbench_inputs(operator_name: str, Operator: type[Any]) -> 
                     x.shape[3],
                     B.shape[3],
                 )
-                if shape == MAMBA2_LARGE_SHAPE and x.device.type == "cuda":
-                    free_memory, _ = torch.cuda.mem_get_info(x.device)
+                if shape == MAMBA2_LARGE_SHAPE and x.device.type in ("cuda", "xpu"):
+                    free_memory, _ = torch.get_device_module(x.device).mem_get_info(
+                        x.device
+                    )
                     # Helion autotune for this shape consistently fails on H100
                     # (~80 GB) after the 5 prior shapes have left behind cached
                     # buffers and JIT state, even though the kernel + autotune
@@ -1096,8 +1100,8 @@ def load_kernel_config(
             kernel_metric_mappings[kernel_name] = metrics
 
     # Process hardware-specific overrides if present
-    if "hardware_overrides" in config and is_cuda():
-        gpu_model = get_nvidia_gpu_model()
+    if "hardware_overrides" in config and (is_cuda() or torch.xpu.is_available()):
+        gpu_model = get_nvidia_gpu_model() if is_cuda() else torch.xpu.get_device_name()
         if gpu_model in config["hardware_overrides"]:
             hw_config = config["hardware_overrides"][gpu_model]
 
