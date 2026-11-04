@@ -379,8 +379,17 @@ def get_hardware_roofline_spec(
     if resolved_cores is None:
         if num_compute_units is not None and num_compute_units > 0:
             resolved_cores = num_compute_units
-        elif device is not None and device.type == "xpu" and torch.xpu.is_available():
-            props = torch.xpu.get_device_properties(device)
+        elif (
+            info.device_kind == "xpu"
+            and torch.xpu.is_available()
+            and (
+                (device is not None and device.type == "xpu")
+                or (device is None and hardware_info is None)
+            )
+        ):
+            props = torch.xpu.get_device_properties(
+                device if device is not None else torch.xpu.current_device()
+            )
             if props.gpu_subslice_count > 0:
                 resolved_cores = int(props.gpu_subslice_count)
 
